@@ -1,67 +1,80 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
+from flask_marshmallow import Marshmallow
+from database_setup import User, HeroRealmEvent
+
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///restaurant.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///boardgamehelper.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 db = SQLAlchemy(app)
+ma = Marshmallow(app)
 session = db.session
 
-from database_setup import Restaurant, MenuItem
+
+class UserSchema(ma.Schema):
+    class Meta:
+        # Fields to expose
+        fields = ('id', 'username', 'email')
 
 
-@app.route("/")
-@app.route("/restaurants/<int:restaurant_id>/")
-def restaurant_menu(restaurant_id=0):
-    if restaurant_id != 0:
-        restaurant = session.query(Restaurant).filter(Restaurant.id == restaurant_id).one()
-        menu_items = session.query(MenuItem).filter(MenuItem.restaurant == restaurant).all()
-    return render_template('menu.html', restaurant=restaurant, items=menu_items)
+user_schema = UserSchema()
+users_schema = UserSchema(many=True)
 
 
-@app.route("/restaurants/<int:restaurant_id>/new/", methods=['GET', 'POST'])
-def newMenuItem(restaurant_id):
-    if request.method == 'POST':
-        newItem = MenuItem(name=request.form['itemname'], restaurant_id=restaurant_id)
-        session.add(newItem)
-        session.commit()
-        flash("New item created!")
-        return redirect(url_for('restaurant_menu', restaurant_id=restaurant_id))
+class HeroRealmEventSchema(ma.Schema):
+    class Meta:
+        # Fields to expose
+        fields = ('id', 'name', 'description', 'user1_id', 'user2_id')
+
+
+event_schema = HeroRealmEventSchema()
+events_schema = HeroRealmEventSchema(many=True)
+
+
+#######################################################################################################################
+# User endpoints
+#
+
+# GET user information
+@app.route("/user", methods=["GET"])
+@app.route("/user/<user_id>", methods=["GET"])
+def get_user(user_id=None):
+    if user_id:
+        user = session.query(User).filter(User.id == user_id).one()
+        return user_schema.jsonify(user)
     else:
-        return render_template('newmenuitem.html', restaurant_id=restaurant_id)
+        all_users = session.query(User)
+        return users_schema.jsonify(all_users)
 
 
-@app.route("/restaurants/<int:restaurant_id>/<int:menu_id>/edit", methods=['GET', 'POST'])
-def editMenuItem(restaurant_id, menu_id):
-    menu_item = session.query(MenuItem).filter(MenuItem.id == menu_id).one()
-    if request.method == 'POST':
-        menu_item.name = request.form['newitemname']
-        session.commit()
-        flash("Item edited")
-        return redirect(url_for('restaurant_menu', restaurant_id=restaurant_id))
+# POST new user
+@app.route("/user", methods=["POST"])
+def add_user():
+    username = request.json['username']
+    email = request.json['email']
+
+    new_user = User(username=username, email=email)
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return user_schema.jsonify(new_user)
+
+
+#######################################################################################################################
+# Event endpoints
+#
+
+# GET event information
+@app.route("/event", methods=["GET"])
+@app.route("/event/<event_id>", methods=["GET"])
+def event_detail(event_id=None):
+    if event_id:
+        event = session.query(HeroRealmEvent).filter(HeroRealmEvent.id == event_id).one()
+        return event_schema.jsonify(event)
     else:
-        return render_template('editmenuitem.html', restaurant_id=restaurant_id, menu_item=menu_item)
-
-
-@app.route("/restaurants/<int:restaurant_id>/<int:menu_id>/delete", methods=['GET', 'POST'])
-def deleteMenuItem(restaurant_id, menu_id):
-    menu_item = session.query(MenuItem).filter(MenuItem.id == menu_id).one()
-    if request.method == 'POST':
-        session.delete(menu_item)
-        session.commit()
-        flash("Item deleted")
-        return redirect(url_for('restaurant_menu', restaurant_id=restaurant_id))
-    else:
-        return render_template('deletemenuitem.html', item=menu_item)
-
-@app.route("/restaurants/<int:restaurant_id>/JSON")
-def restaurantMenuJSON(restaurant_id):
-    restaurant = session.query(Restaurant).filter(Restaurant.id == restaurant_id).one()
-    menu_items = session.query(MenuItem).filter(MenuItem.restaurant == restaurant).all()
-    return jsonify(MenuItems=[i.serialize for i in menu_items])
-
-@app.route("/restaurants/<int:restaurant_id>/<int:menu_id>/JSON")
-def restaurantMenuItemJSON(restaurant_id, menu_id):
-    menu_item = session.query(MenuItem).filter(MenuItem.id == menu_id).one()
-    return jsonify(MenuItems=[menu_item.serialize])
+        all_events = session.query(HeroRealmEvent)
+        return events_schema.jsonify(all_events)
 
 
 if __name__ == "__main__":
